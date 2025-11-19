@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Section from '@/components/ui/Section';
@@ -11,13 +11,15 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError(null);
     setLoading(true);
+
+    console.log('Login form submitted with:', { email, password });
 
     try {
       const response = await fetch('/api/auth/login', {
@@ -28,19 +30,21 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
 
+      console.log('Login response status:', response.status);
       const data = await response.json();
+      console.log('Login response data:', data);
 
-      if (!response.ok) {
+      if (response.ok) {
+        console.log('Login successful, redirecting to /family');
+        router.push('/family');
+      } else {
+        console.log('Login failed with error:', data.error);
         setError(data.error || 'Login failed');
-        setLoading(false);
-        return;
       }
-
-      // Redirect to dashboard or family page on success
-      router.push('/family');
-      router.refresh();
-    } catch (err) {
-      setError('An error occurred. Please try again.');
+    } catch (error) {
+      console.error('Login fetch error:', error);
+      setError('Network error. Please try again.');
+    } finally {
       setLoading(false);
     }
   };

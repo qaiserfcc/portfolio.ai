@@ -27,6 +27,8 @@ import {
   PortfolioTheme,
   PortfolioPage,
   PageType,
+  UserSession,
+  AuditLog,
 } from './schema';
 
 // ============================================================================
@@ -194,6 +196,251 @@ export async function listUsers(options?: {
   params.push(limit, offset);
 
   return query<User>(sql, params);
+}
+
+// ============================================================================
+// USER SESSION SERVICES
+// ============================================================================
+
+/**
+ * Create a new user session
+ */
+export async function createUserSession(data: {
+  userId: string;
+  tokenHash: string;
+  expiresAt: Date;
+  ipAddress?: string;
+  userAgent?: string;
+}): Promise<UserSession> {
+  const id = crypto.randomUUID();
+  const now = new Date();
+
+  const rows = await query<UserSession>(
+    `INSERT INTO user_sessions (
+      id, user_id, token_hash, expires_at, ip_address, user_agent, created_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+    RETURNING *`,
+    [
+      id,
+      data.userId,
+      data.tokenHash,
+      data.expiresAt,
+      data.ipAddress || null,
+      data.userAgent || null,
+      now,
+    ]
+  );
+
+  return rows[0];
+}
+
+/**
+ * Find session by token hash
+ */
+export async function findUserSessionByTokenHash(
+  tokenHash: string
+): Promise<UserSession | null> {
+  const rows = await query<UserSession>(
+    'SELECT * FROM user_sessions WHERE token_hash = $1 AND expires_at > NOW()',
+    [tokenHash]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Update session last used timestamp
+ */
+export async function updateSessionLastUsed(sessionId: string): Promise<void> {
+  await query(
+    'UPDATE user_sessions SET last_used_at = NOW() WHERE id = $1',
+    [sessionId]
+  );
+}
+
+/**
+ * Delete session by token hash
+ */
+export async function deleteUserSessionByTokenHash(tokenHash: string): Promise<boolean> {
+  const rows = await query(
+    'DELETE FROM user_sessions WHERE token_hash = $1',
+    [tokenHash]
+  );
+  return rows.length > 0;
+}
+
+/**
+ * Delete all expired sessions
+ */
+export async function deleteExpiredSessions(): Promise<number> {
+  const result = await query(
+    'DELETE FROM user_sessions WHERE expires_at < NOW()'
+  );
+  return result.length;
+}
+
+/**
+ * Delete all sessions for a user
+ */
+export async function deleteAllUserSessions(userId: string): Promise<number> {
+  const result = await query(
+    'DELETE FROM user_sessions WHERE user_id = $1',
+    [userId]
+  );
+  return result.length;
+}
+
+// ============================================================================
+// AUDIT LOG SERVICES
+// ============================================================================
+
+/**
+ * Create a new audit log entry
+ */
+export async function createAuditLog(data: {
+  userId?: string;
+  action: string;
+  resource: string;
+  resourceId?: string;
+  ipAddress?: string;
+  userAgent?: string;
+  details?: Record<string, any>;
+}): Promise<AuditLog> {
+  const id = crypto.randomUUID();
+  const now = new Date();
+
+  const rows = await query<AuditLog>(
+    `INSERT INTO audit_logs (
+      id, user_id, action, resource, resource_id, ip_address, user_agent, details, created_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    RETURNING *`,
+    [
+      id,
+      data.userId || null,
+      data.action,
+      data.resource,
+      data.resourceId || null,
+      data.ipAddress || null,
+      data.userAgent || null,
+      data.details ? JSON.stringify(data.details) : null,
+      now,
+    ]
+  );
+
+  return rows[0];
+}
+
+/**
+ * Query audit logs with optional filters
+ */
+export async function queryAuditLogs(filters: {
+  userId?: string;
+  action?: string;
+  resource?: string;
+  resourceId?: string;
+  limit?: number;
+  offset?: number;
+  startDate?: Date;
+  endDate?: Date;
+}): Promise<AuditLog[]> {
+  let queryStr = 'SELECT * FROM audit_logs WHERE 1=1';
+  const values: any[] = [];
+  let paramIndex = 1;
+
+  if (filters.userId) {
+    queryStr += ` AND user_id = $${paramIndex++}`;
+    values.push(filters.userId);
+  }
+
+  if (filters.action) {
+    queryStr += ` AND action = $${paramIndex++}`;
+    values.push(filters.action);
+  }
+
+  if (filters.resource) {
+    queryStr += ` AND resource = $${paramIndex++}`;
+    values.push(filters.resource);
+  }
+
+  if (filters.resourceId) {
+    queryStr += ` AND resource_id = $${paramIndex++}`;
+    values.push(filters.resourceId);
+  }
+
+  if (filters.startDate) {
+    queryStr += ` AND created_at >= $${paramIndex++}`;
+    values.push(filters.startDate);
+  }
+
+  if (filters.endDate) {
+    queryStr += ` AND created_at <= $${paramIndex++}`;
+    values.push(filters.endDate);
+  }
+
+  queryStr += ' ORDER BY created_at DESC';
+
+  if (filters.limit) {
+    queryStr += ` LIMIT $${paramIndex++}`;
+    values.push(filters.limit);
+  }
+
+  if (filters.offset) {
+    queryStr += ` OFFSET $${paramIndex++}`;
+    values.push(filters.offset);
+  }
+
+  return query<AuditLog>(queryStr, values);
+}
+
+/**
+ * Get audit logs for a specific user
+ */
+export async function getUserAuditLogs(
+  userId: string,
+  limit: number = 50,
+  offset: number = 0
+): Promise<AuditLog[]> {
+  return queryAuditLogs({ userId, limit, offset });
+}
+
+/**
+ * Get audit logs for a specific resource
+ */
+export async function getResourceAuditLogs(
+  resource: string,
+  resourceId: string,
+  limit: number = 50,
+  offset: number = 0
+): Promise<AuditLog[]> {
+  return queryAuditLogs({ resource, resourceId, limit, offset });
+}
+
+/**
+ * Get recent audit logs (last 24 hours)
+ */
+export async function getRecentAuditLogs(
+  limit: number = 100
+): Promise<AuditLog[]> {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  return queryAuditLogs({ startDate: yesterday, limit });
+}
+
+/**
+ * Delete old audit logs (for retention policy)
+ */
+export async function deleteOldAuditLogs(
+  olderThanDays: number = 90
+): Promise<number> {
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
+
+  const result = await query(
+    'DELETE FROM audit_logs WHERE created_at < $1',
+    [cutoffDate]
+  );
+
+  return result.length;
 }
 
 // ============================================================================

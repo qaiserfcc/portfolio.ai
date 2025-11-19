@@ -12,6 +12,31 @@ export interface User {
   lastLoginAt?: Date;
 }
 
+// User Sessions (for refresh token storage)
+export interface UserSession {
+  id: string;
+  userId: string;
+  tokenHash: string; // Hashed refresh token
+  expiresAt: Date;
+  ipAddress?: string;
+  userAgent?: string;
+  createdAt: Date;
+  lastUsedAt?: Date;
+}
+
+// Audit Logs (security and compliance logging)
+export interface AuditLog {
+  id: string;
+  userId?: string; // Optional - for anonymous events
+  action: string; // e.g., 'login_success', 'login_failed', 'user_created'
+  resource: string; // e.g., 'user', 'resume', 'photo'
+  resourceId?: string; // ID of the affected resource
+  ipAddress?: string;
+  userAgent?: string;
+  details?: string; // Additional JSON details
+  createdAt: Date;
+}
+
 // User Portfolio Photos (max 3 per user)
 export interface UserPortfolioPhoto {
   id: string;

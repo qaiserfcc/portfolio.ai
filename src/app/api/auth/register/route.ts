@@ -4,13 +4,12 @@
  * 
  * Registers a new user with email and password
  * Requires email verification before account activation
+ * 
+ * Rate limiting: 5 requests per 15 minutes per IP
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAccessToken, createRefreshToken } from '@/lib/security/jwt';
-
-// Rate limit: 5 requests per 15 minutes
-// TODO: Apply rate limiting middleware
 
 interface RegisterRequest {
   email: string;
@@ -19,6 +18,45 @@ interface RegisterRequest {
 }
 
 export async function POST(request: NextRequest) {
+  // Rate limiting: 5 requests per 15 minutes
+  const clientId = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+                   request.headers.get('x-real-ip') ||
+                   request.headers.get('cf-connecting-ip') ||
+                   'unknown';
+  
+  const rateLimitKey = `register:${clientId}`;
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000; // 15 minutes
+  const maxRequests = 5;
+  
+  // Simple in-memory rate limiting (use Redis in production)
+  const rateLimitStore = (global as any).rateLimitStore || ((global as any).rateLimitStore = new Map());
+  const record = rateLimitStore.get(rateLimitKey);
+  
+  if (record && now < record.resetTime) {
+    if (record.count >= maxRequests) {
+      return NextResponse.json(
+        {
+          error: 'Too many requests',
+          message: 'Rate limit exceeded. Please try again later.',
+          retryAfter: Math.ceil((record.resetTime - now) / 1000),
+        },
+        { 
+          status: 429,
+          headers: {
+            'Retry-After': String(Math.ceil((record.resetTime - now) / 1000)),
+          },
+        }
+      );
+    }
+    record.count++;
+  } else {
+    rateLimitStore.set(rateLimitKey, {
+      count: 1,
+      resetTime: now + windowMs,
+    });
+  }
+  
   try {
     const body: RegisterRequest = await request.json();
     
