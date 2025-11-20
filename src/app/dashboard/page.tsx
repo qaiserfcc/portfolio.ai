@@ -20,6 +20,7 @@ import {
 } from 'react-icons/fa';
 import Section from '@/components/ui/Section';
 import Container from '@/components/ui/Container';
+import Modal from '@/components/ui/Modal';
 import { DashboardSummary } from '@/types/dashboard';
 
 interface UploadResponse {
@@ -38,6 +39,8 @@ export default function DashboardPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'upload' | 'resumes' | 'photos'>('upload');
+  const [selectedPhoto, setSelectedPhoto] = useState<{ id: string; photoUrl: string } | null>(null);
+  const [selectedResume, setSelectedResume] = useState<{ id: string; originalFilename: string; resumeUrl: string } | null>(null);
 
   const resumeInputRef = useRef<HTMLInputElement | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
@@ -102,7 +105,7 @@ export default function DashboardPage() {
         formData.append('additionalContext', additionalContext);
       }
 
-      const response = await fetch('/api/upload/resume', {
+      const response = await fetch('/api/portfolio/resumes', {
         method: 'POST',
         body: formData,
       });
@@ -188,6 +191,27 @@ export default function DashboardPage() {
     }
   };
 
+  const handleDeleteResume = async (resumeId: string) => {
+    if (!confirm('Are you sure you want to delete this resume? This action cannot be undone.')) return;
+
+    try {
+      const response = await fetch(`/api/portfolio/resumes?id=${resumeId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        setSuccess('Resume deleted successfully!');
+        await refreshDashboard();
+      } else {
+        const data = await response.json();
+        setError(data.error || 'Failed to delete resume');
+      }
+    } catch (err) {
+      setError('An error occurred while deleting');
+      console.error('Delete error:', err);
+    }
+  };
+
   const handleGeneratePortfolio = async (resumeId: string) => {
     setIsGenerating(resumeId);
     setError(null);
@@ -214,6 +238,27 @@ export default function DashboardPage() {
       console.error('Generation error:', err);
     } finally {
       setIsGenerating(null);
+    }
+  };
+
+  const handleViewPhoto = (photo: { id: string; photoUrl: string }) => {
+    setSelectedPhoto(photo);
+  };
+
+  const handlePreviewResume = async (resume: { id: string; originalFilename: string }) => {
+    try {
+      // Get the resume file URL from the API
+      const response = await fetch(`/api/files/resume/${resume.id}`);
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        setSelectedResume({ id: resume.id, originalFilename: resume.originalFilename, resumeUrl: url });
+      } else {
+        setError('Failed to load resume for preview');
+      }
+    } catch (err) {
+      setError('An error occurred while loading resume');
+      console.error('Resume preview error:', err);
     }
   };
 
@@ -276,7 +321,7 @@ export default function DashboardPage() {
             {tabs.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => setActiveTab(tab.id as 'upload' | 'resumes' | 'photos')}
                 className={`flex items-center gap-2 px-6 py-3 font-medium transition-colors ${
                   activeTab === tab.id
                     ? 'border-b-2 border-indigo-600 text-indigo-600 dark:text-indigo-400'
@@ -372,9 +417,9 @@ export default function DashboardPage() {
                     {/* Photo Preview Grid */}
                     <div className="grid grid-cols-3 gap-2">
                       {dashboard?.photos.slice(0, 3).map((photo) => (
-                        <div key={photo.id} className="relative group">
-                          <img src={photo.photoUrl} alt="Portfolio" className="w-full h-20 object-cover rounded-lg" />
-                          <button onClick={() => handleDeletePhoto(photo.id)} aria-label="Delete photo" className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div key={photo.id} className="relative group cursor-pointer" onClick={() => handleViewPhoto(photo)}>
+                          <img src={photo.photoUrl} alt="Portfolio" className="w-full h-32 object-cover rounded-lg transition-transform group-hover:scale-105" />
+                          <button onClick={(e) => { e.stopPropagation(); handleDeletePhoto(photo.id); }} aria-label="Delete photo" className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
                             <FaTrash className="w-3 h-3" />
                           </button>
                         </div>
@@ -414,6 +459,20 @@ export default function DashboardPage() {
                             )}
                           </div>
                           <div className="flex gap-2">
+                            <button
+                              onClick={() => handlePreviewResume(resume)}
+                              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all"
+                            >
+                              <FaEye className="w-4 h-4" />
+                              Preview
+                            </button>
+                            <button
+                              onClick={() => handleDeleteResume(resume.id)}
+                              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-all"
+                            >
+                              <FaTrash className="w-4 h-4" />
+                              Delete
+                            </button>
                             {!resume.portfolioGenerated ? (
                               <button
                                 onClick={() => handleGeneratePortfolio(resume.id)}
@@ -455,12 +514,12 @@ export default function DashboardPage() {
                       </button>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                       {dashboard?.photos?.map((photo) => (
-                        <div key={photo.id} className="relative group">
-                          <img src={photo.photoUrl} alt="Portfolio" className="w-full h-32 object-cover rounded-lg shadow-md" />
+                        <div key={photo.id} className="relative group cursor-pointer" onClick={() => handleViewPhoto(photo)}>
+                          <img src={photo.photoUrl} alt="Portfolio" className="w-full h-64 object-cover rounded-lg shadow-md transition-transform group-hover:scale-105" />
                           <button
-                            onClick={() => handleDeletePhoto(photo.id)}
+                            onClick={(e) => { e.stopPropagation(); handleDeletePhoto(photo.id); }}
                             aria-label="Delete photo"
                             className="absolute top-2 right-2 p-2 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700"
                           >
@@ -476,6 +535,47 @@ export default function DashboardPage() {
           )}
         </motion.div>
       </Container>
+
+      {/* Photo Modal */}
+      <Modal
+        isOpen={!!selectedPhoto}
+        onClose={() => setSelectedPhoto(null)}
+        title="Photo Preview"
+        size="xl"
+      >
+        {selectedPhoto && (
+          <div className="flex justify-center">
+            <img
+              src={selectedPhoto.photoUrl}
+              alt="Portfolio"
+              className="max-w-full max-h-[70vh] object-contain rounded-lg"
+            />
+          </div>
+        )}
+      </Modal>
+
+      {/* Resume Modal */}
+      <Modal
+        isOpen={!!selectedResume}
+        onClose={() => {
+          if (selectedResume?.resumeUrl) {
+            URL.revokeObjectURL(selectedResume.resumeUrl);
+          }
+          setSelectedResume(null);
+        }}
+        title={`Resume Preview - ${selectedResume?.originalFilename}`}
+        size="full"
+      >
+        {selectedResume && (
+          <div className="w-full h-[80vh]">
+            <iframe
+              src={selectedResume.resumeUrl}
+              className="w-full h-full border-0 rounded-lg"
+              title={`Preview of ${selectedResume.originalFilename}`}
+            />
+          </div>
+        )}
+      </Modal>
     </Section>
   );
 }

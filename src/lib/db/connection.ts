@@ -57,6 +57,18 @@ export async function query<T = any>(text: string, params?: any[]): Promise<T[]>
 }
 
 /**
+ * Execute a query and return both rows and row count
+ */
+export async function queryWithCount<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<{ rows: T[], rowCount: number }> {
+  const pool = getPool();
+  const result = await pool.query(text, params);
+  return {
+    rows: result.rows.map(row => mapRowToCamelCase(row)) as T[],
+    rowCount: result.rowCount || 0,
+  };
+}
+
+/**
  * Get a client from the pool for transactions
  */
 export async function getClient(): Promise<PoolClient> {

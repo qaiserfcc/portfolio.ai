@@ -18,7 +18,7 @@
  */
 
 import { PoolClient } from 'pg';
-import { query, getClient } from './connection';
+import { query, queryWithCount, getClient } from './connection';
 import {
   User,
   UserPortfolioPhoto,
@@ -528,11 +528,11 @@ export async function listUserPortfolioPhotos(
  * Delete portfolio photo
  */
 export async function deletePortfolioPhoto(photoId: string): Promise<boolean> {
-  const rows = await query(
+  const result = await queryWithCount(
     'DELETE FROM user_portfolio_photos WHERE id = $1',
     [photoId]
   );
-  return rows.length > 0;
+  return result.rowCount > 0;
 }
 
 /**
@@ -541,11 +541,11 @@ export async function deletePortfolioPhoto(photoId: string): Promise<boolean> {
 export async function deleteAllUserPortfolioPhotos(
   userId: string
 ): Promise<number> {
-  const result = await query(
+  const result = await queryWithCount(
     'DELETE FROM user_portfolio_photos WHERE user_id = $1',
     [userId]
   );
-  return result.length;
+  return result.rowCount;
 }
 
 // ============================================================================
@@ -589,25 +589,37 @@ export async function createResume(data: {
   resumeUrl: string;
   originalFilename: string;
   aiNotes?: string;
+  iv?: string;
+  authTag?: string;
 }): Promise<Resume> {
   const id = crypto.randomUUID();
   const now = new Date();
 
+  // Build dynamic INSERT statement based on provided fields
+  const baseFields = [
+    'id', 'user_id', 'resume_url', 'original_filename', 'uploaded_at', 
+    'ai_notes', 'portfolio_generated'
+  ];
+  const baseValues = [
+    id, data.userId, data.resumeUrl, data.originalFilename, now,
+    data.aiNotes || null, false
+  ];
+
+  if (data.iv !== undefined && data.iv !== null) {
+    baseFields.push('iv');
+    baseValues.push(data.iv);
+  }
+
+  if (data.authTag !== undefined && data.authTag !== null) {
+    baseFields.push('auth_tag');
+    baseValues.push(data.authTag);
+  }
+
   const rows = await query<Resume>(
-    `INSERT INTO resumes (
-      id, user_id, resume_url, original_filename, uploaded_at, 
-      ai_notes, portfolio_generated
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO resumes (${baseFields.join(', ')})
+    VALUES (${baseValues.map((_, i) => `$${i + 1}`).join(', ')})
     RETURNING *`,
-    [
-      id,
-      data.userId,
-      data.resumeUrl,
-      data.originalFilename,
-      now,
-      data.aiNotes || null,
-      false, // portfolio_generated
-    ]
+    baseValues
   );
 
   return rows[0];
@@ -690,22 +702,22 @@ export async function markResumeAsGenerated(resumeId: string): Promise<void> {
  * Delete resume
  */
 export async function deleteResume(resumeId: string): Promise<boolean> {
-  const rows = await query(
+  const result = await queryWithCount(
     'DELETE FROM resumes WHERE id = $1',
     [resumeId]
   );
-  return rows.length > 0;
+  return result.rowCount > 0;
 }
 
 /**
  * Delete all resumes for a user
  */
 export async function deleteAllUserResumes(userId: string): Promise<number> {
-  const result = await query(
+  const result = await queryWithCount(
     'DELETE FROM resumes WHERE user_id = $1',
     [userId]
   );
-  return result.length;
+  return result.rowCount;
 }
 
 /**

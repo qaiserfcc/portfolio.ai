@@ -151,23 +151,37 @@ export async function deleteFile(location: string): Promise<void> {
   const config = getStorageConfig();
   
   if (config.provider === 'local') {
-    const url = new URL(location);
-    const filePath = url.pathname;
-    
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+    try {
+      const url = new URL(location);
+      const filePath = url.pathname;
+      
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+      // File deleted successfully or didn't exist - no error
+    } catch (error) {
+      console.warn('Error deleting local file:', error);
+      // Don't throw - file deletion is not critical
     }
   } else {
     // S3 delete
-    const url = new URL(location);
-    const bucket = url.hostname.split('.')[0];
-    const key = url.pathname.slice(1);
-    
-    const client = getS3Client();
-    await client.send(new DeleteObjectCommand({
-      Bucket: bucket,
-      Key: key,
-    }));
+    try {
+      const url = new URL(location);
+      const bucket = url.hostname.split('.')[0];
+      const key = url.pathname.slice(1);
+      
+      const client = getS3Client();
+      await client.send(new DeleteObjectCommand({
+        Bucket: bucket,
+        Key: key,
+      }));
+    } catch (error: any) {
+      // Don't throw error if object doesn't exist (NoSuchKey)
+      if (error.name !== 'NoSuchKey') {
+        console.warn('Error deleting S3 file:', error);
+        // Don't throw - file deletion is not critical for the operation
+      }
+    }
   }
 }
 

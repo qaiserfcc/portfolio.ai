@@ -105,6 +105,8 @@ export async function POST(request: NextRequest) {
       resumeUrl: storageLocation,
       originalFilename: file.name,
       aiNotes: aiNotes || undefined,
+      iv,
+      authTag,
     });
     
     return NextResponse.json(

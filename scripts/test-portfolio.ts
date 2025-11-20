@@ -3,6 +3,7 @@
  * Run with: npx tsx scripts/test-portfolio.ts
  */
 
+import { config } from 'dotenv';
 import { initializeDatabase } from '../src/lib/db/init';
 import { 
   createUser, 
@@ -13,6 +14,9 @@ import {
   canUploadMorePhotos
 } from '../src/lib/db/services';
 import { generatePortfolioContent, generateGradientTheme } from '../src/lib/ai/portfolio-generator';
+
+// Load environment variables
+config({ path: '.env.local' });
 
 async function runAIGenerationTests() {
   console.log('6️⃣ Generating AI portfolio content...');
@@ -69,7 +73,7 @@ async function testPortfolioGeneration() {
     // Test 2: Create test user
     console.log('2️⃣ Creating test user...');
     const testUser = await createUser({
-      email: 'test@example.com',
+      email: `test-${Date.now()}@example.com`,
       passwordHash: 'hashed_password',
       name: 'Test User',
       role: 'user',
@@ -88,6 +92,7 @@ async function testPortfolioGeneration() {
       resumeUrl: 's3://test-bucket/resume.pdf',
       originalFilename: 'test-resume.pdf',
       aiNotes: 'Software engineer with 5 years experience',
+      // iv and authTag are optional
     });
     console.log(`✅ Resume uploaded: ${testResume.id}\n`);
 

@@ -57,6 +57,8 @@ export interface Resume {
   uploadedAt: Date;
   aiNotes?: string; // rich text box content
   portfolioGenerated: boolean;
+  iv?: string; // Initialization vector for decryption (hex)
+  authTag?: string; // Authentication tag for decryption (hex)
 }
 
 // Generated Portfolio (one per resume)

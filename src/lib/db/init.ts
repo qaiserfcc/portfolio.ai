@@ -106,8 +106,20 @@ export async function initializeDatabase() {
         original_filename VARCHAR(255),
         uploaded_at TIMESTAMP DEFAULT NOW(),
         ai_notes TEXT,
-        portfolio_generated BOOLEAN DEFAULT FALSE
+        portfolio_generated BOOLEAN DEFAULT FALSE,
+        iv VARCHAR(255),
+        auth_tag VARCHAR(255)
       );
+    `);
+
+    // Add iv column if it doesn't exist (for existing tables)
+    await pool.query(`
+      ALTER TABLE resumes ADD COLUMN IF NOT EXISTS iv VARCHAR(255);
+    `);
+
+    // Add auth_tag column if it doesn't exist (for existing tables)
+    await pool.query(`
+      ALTER TABLE resumes ADD COLUMN IF NOT EXISTS auth_tag VARCHAR(255);
     `);
 
     // Create index on user_id for resumes
