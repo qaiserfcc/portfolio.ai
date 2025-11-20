@@ -9,6 +9,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAccessToken } from '@/lib/security/jwt';
+import { hashToken } from '@/lib/security/auth';
+import { deleteUserSessionByTokenHash, createAuditLog } from '@/lib/db/services';
 
 export async function POST(request: NextRequest) {
   // Rate limiting: 10 requests per 15 minutes (less strict than login/register)
@@ -51,27 +53,32 @@ export async function POST(request: NextRequest) {
   }
   
   try {
-    // Get access token from cookie
+    // Get tokens from cookies
     const accessToken = request.cookies.get('accessToken')?.value;
+    const refreshToken = request.cookies.get('refreshToken')?.value;
+    
+    let userId: string | null = null;
     
     if (accessToken) {
       // Verify token and get user ID
-      const userId = verifyAccessToken(accessToken);
+      userId = verifyAccessToken(accessToken);
+    }
+    
+    if (userId && refreshToken) {
+      // Invalidate refresh token in database
+      const tokenHash = hashToken(refreshToken);
+      await deleteUserSessionByTokenHash(tokenHash);
       
-      if (userId) {
-        // TODO: Invalidate refresh token in database
-        // await db.sessions.deleteByUserId(userId);
-        
-        // TODO: Log logout event
-        // await db.auditLogs.create({
-        //   userId,
-        //   action: 'logout',
-        //   resource: 'user',
-        //   resourceId: userId,
-        //   ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-        //   userAgent: request.headers.get('user-agent') || 'unknown',
-        // });
-      }
+      // Log logout event
+      await createAuditLog({
+        userId,
+        action: 'logout',
+        resource: 'user',
+        resourceId: userId,
+        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown',
+        details: { method: 'token_invalidation' },
+      });
     }
     
     // Clear cookies

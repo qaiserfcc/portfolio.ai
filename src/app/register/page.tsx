@@ -51,8 +51,8 @@ export default function RegisterPage() {
         return;
       }
 
-      // Redirect to family page on success
-      router.push('/family');
+      // Redirect to dashboard page on success
+      router.push('/dashboard');
       router.refresh();
     } catch (err) {
       setError('An error occurred. Please try again.');

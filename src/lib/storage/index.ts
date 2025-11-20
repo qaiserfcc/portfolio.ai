@@ -3,33 +3,64 @@
  * Handles encrypted file storage with presigned URLs
  */
 
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import * as fs from 'fs';
+import * as path from 'path';
+
 interface StorageConfig {
-  provider: 's3' | 'gcs';
+  provider: 's3' | 'gcs' | 'local';
   bucket: string;
   region?: string;
+  localPath?: string;
 }
 
 /**
  * Get storage configuration from environment
  */
 function getStorageConfig(): StorageConfig {
-  const provider = (process.env.STORAGE_PROVIDER || 's3') as 's3' | 'gcs';
-  const bucket = process.env.S3_BUCKET || process.env.GCS_BUCKET;
+  const provider = (process.env.STORAGE_PROVIDER || 'local') as 's3' | 'gcs' | 'local';
+  const bucket = process.env.S3_BUCKET;
   
-  if (!bucket) {
-    throw new Error('Storage bucket not configured');
+  if (provider === 's3' && !bucket) {
+    throw new Error('S3_BUCKET environment variable not configured');
   }
   
   return {
     provider,
-    bucket,
+    bucket: bucket || 'local-bucket',
     region: process.env.S3_REGION || 'us-east-1',
+    localPath: process.env.LOCAL_STORAGE_PATH || path.join(process.cwd(), 'uploads'),
   };
 }
 
 /**
+ * Get S3 client instance
+ */
+function getS3Client(): S3Client {
+  const config = getStorageConfig();
+  
+  return new S3Client({
+    region: config.region,
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+    },
+  });
+}
+
+/**
+ * Ensure local storage directory exists
+ */
+function ensureLocalDirectory(dirPath: string): void {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+}
+
+/**
  * Upload encrypted file to storage
- * Note: This is a placeholder. Implement with actual AWS SDK or GCS client
  * @param encryptedData - Encrypted file buffer
  * @param fileName - File name in storage
  * @param userId - User ID for organizing files
@@ -41,23 +72,32 @@ export async function uploadEncryptedFile(
   userId: string
 ): Promise<string> {
   const config = getStorageConfig();
-  const key = `users/${userId}/files/${fileName}`;
   
-  // TODO: Implement actual upload using AWS SDK or GCS client
-  // For S3:
-  /*
-  const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
-  const client = new S3Client({ region: config.region });
-  
-  await client.send(new PutObjectCommand({
-    Bucket: config.bucket,
-    Key: key,
-    Body: encryptedData,
-    ServerSideEncryption: 'AES256', // Additional layer of encryption
-  }));
-  */
-  
-  return `${config.provider}://${config.bucket}/${key}`;
+  if (config.provider === 'local') {
+    const userDir = path.join(config.localPath!, userId);
+    const fileDir = path.join(userDir, 'files');
+    ensureLocalDirectory(fileDir);
+    
+    const filePath = path.join(fileDir, fileName);
+    fs.writeFileSync(filePath, encryptedData);
+    
+    return `file://${filePath}`;
+  } else {
+    // S3 upload
+    const key = `users/${userId}/files/${fileName}`;
+    
+    const client = getS3Client();
+    
+    await client.send(new PutObjectCommand({
+      Bucket: config.bucket,
+      Key: key,
+      Body: encryptedData,
+      ServerSideEncryption: 'AES256', // Additional layer of encryption
+      ContentType: 'application/octet-stream', // Encrypted files
+    }));
+    
+    return `s3://${config.bucket}/${key}`;
+  }
 }
 
 /**
@@ -68,28 +108,39 @@ export async function uploadEncryptedFile(
 export async function downloadEncryptedFile(
   location: string
 ): Promise<Buffer> {
-  // TODO: Implement actual download using AWS SDK or GCS client
-  // For S3:
-  /*
-  const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
-  const url = new URL(location);
-  const bucket = url.hostname.split('.')[0];
-  const key = url.pathname.slice(1);
+  const config = getStorageConfig();
   
-  const client = new S3Client({ region: process.env.S3_REGION });
-  const response = await client.send(new GetObjectCommand({
-    Bucket: bucket,
-    Key: key,
-  }));
-  
-  const chunks = [];
-  for await (const chunk of response.Body) {
-    chunks.push(chunk);
+  if (config.provider === 'local') {
+    const url = new URL(location);
+    const filePath = url.pathname;
+    
+    if (!fs.existsSync(filePath)) {
+      throw new Error('File not found');
+    }
+    
+    return fs.readFileSync(filePath);
+  } else {
+    // S3 download
+    const url = new URL(location);
+    const bucket = url.hostname.split('.')[0];
+    const key = url.pathname.slice(1);
+    
+    const client = getS3Client();
+    const response = await client.send(new GetObjectCommand({
+      Bucket: bucket,
+      Key: key,
+    }));
+    
+    if (!response.Body) {
+      throw new Error('File not found');
+    }
+    
+    const chunks = [];
+    for await (const chunk of response.Body as any) {
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
   }
-  return Buffer.concat(chunks);
-  */
-  
-  throw new Error('Storage download not implemented');
 }
 
 /**
@@ -97,20 +148,27 @@ export async function downloadEncryptedFile(
  * @param location - Storage location URL
  */
 export async function deleteFile(location: string): Promise<void> {
-  // TODO: Implement actual deletion using AWS SDK or GCS client
-  // For S3:
-  /*
-  const { S3Client, DeleteObjectCommand } = require('@aws-sdk/client-s3');
-  const url = new URL(location);
-  const bucket = url.hostname.split('.')[0];
-  const key = url.pathname.slice(1);
+  const config = getStorageConfig();
   
-  const client = new S3Client({ region: process.env.S3_REGION });
-  await client.send(new DeleteObjectCommand({
-    Bucket: bucket,
-    Key: key,
-  }));
-  */
+  if (config.provider === 'local') {
+    const url = new URL(location);
+    const filePath = url.pathname;
+    
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  } else {
+    // S3 delete
+    const url = new URL(location);
+    const bucket = url.hostname.split('.')[0];
+    const key = url.pathname.slice(1);
+    
+    const client = getS3Client();
+    await client.send(new DeleteObjectCommand({
+      Bucket: bucket,
+      Key: key,
+    }));
+  }
 }
 
 /**
@@ -129,15 +187,14 @@ export async function generatePresignedUploadUrl(
   fields: Record<string, string>;
 }> {
   const config = getStorageConfig();
+  
+  if (config.provider === 'local') {
+    throw new Error('Presigned URLs not supported for local storage');
+  }
+  
   const key = `users/${userId}/temp/${fileName}`;
   
-  // TODO: Implement presigned URL generation
-  // For S3:
-  /*
-  const { S3Client } = require('@aws-sdk/client-s3');
-  const { createPresignedPost } = require('@aws-sdk/s3-presigned-post');
-  
-  const client = new S3Client({ region: config.region });
+  const client = getS3Client();
   
   const { url, fields } = await createPresignedPost(client, {
     Bucket: config.bucket,
@@ -149,9 +206,6 @@ export async function generatePresignedUploadUrl(
   });
   
   return { url, fields };
-  */
-  
-  throw new Error('Presigned URL generation not implemented');
 }
 
 /**
@@ -164,24 +218,21 @@ export async function generatePresignedDownloadUrl(
   location: string,
   expiresIn: number = 3600
 ): Promise<string> {
-  // TODO: Implement presigned URL for download
-  // For S3:
-  /*
-  const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
-  const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+  const config = getStorageConfig();
+  
+  if (config.provider === 'local') {
+    throw new Error('Presigned URLs not supported for local storage');
+  }
   
   const url = new URL(location);
   const bucket = url.hostname.split('.')[0];
   const key = url.pathname.slice(1);
   
-  const client = new S3Client({ region: process.env.S3_REGION });
+  const client = getS3Client();
   const command = new GetObjectCommand({
     Bucket: bucket,
     Key: key,
   });
   
   return getSignedUrl(client, command, { expiresIn });
-  */
-  
-  throw new Error('Presigned download URL generation not implemented');
 }

@@ -16,6 +16,8 @@ import {
   deletePortfolioPhoto,
   getUserPhotoCount,
 } from '@/lib/db/services';
+import { uploadEncryptedFile, deleteFile, generatePresignedDownloadUrl } from '@/lib/storage';
+import { encryptFile } from '@/lib/security/encryption';
 
 const ALLOWED_TYPES = [
   'image/jpeg',
@@ -87,16 +89,35 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // For demo purposes, create a placeholder URL
-    // In production, upload to storage (S3/GCS) with encryption
+    // Encrypt the file
+    console.log('Encrypting file...');
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    const { encryptedData, iv, authTag } = await encryptFile(fileBuffer);
+    
+    // Upload encrypted file to storage
+    console.log('Uploading encrypted file to storage...');
     const timestamp = Date.now();
     const extension = file.name.split('.').pop() || 'jpg';
-    const photoUrl = `/uploads/photos/${userId}/portfolio_photo_${timestamp}.${extension}`;
+    const storageFileName = `portfolio_photo_${timestamp}.${extension}`;
+    const storageLocation = await uploadEncryptedFile(encryptedData, storageFileName, userId);
     
-    // Save to database
+    // Generate a public URL for display
+    let publicUrl: string;
+    if (storageLocation.startsWith('file://')) {
+      // For local storage, create a public URL that serves the file
+      publicUrl = `/api/files/${userId}/${storageFileName}`;
+    } else {
+      // For S3, generate a presigned URL
+      publicUrl = await generatePresignedDownloadUrl(storageLocation, 3600); // 1 hour expiry
+    }
+    
+    // Save to database with both storage location and public URL
     const photo = await createPortfolioPhoto({
       userId,
-      photoUrl,
+      photoUrl: publicUrl,
+      storageLocation,
+      iv,
+      authTag,
     });
     
     return NextResponse.json(
@@ -234,8 +255,8 @@ export async function DELETE(request: NextRequest) {
       );
     }
     
-    // TODO: Delete from storage (S3/GCS)
-    // await deleteFile(photo.photoUrl);
+    // Delete from storage
+    await deleteFile(photo.storageLocation);
     
     return NextResponse.json(
       {

@@ -9,7 +9,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAccessToken } from '@/lib/security/jwt';
 import { encryptFile } from '@/lib/security/encryption';
-import { uploadEncryptedFile } from '@/lib/storage';
+import { uploadEncryptedFile, generatePresignedDownloadUrl } from '@/lib/storage';
+import { createPortfolioPhoto, canUploadMorePhotos, listUserPortfolioPhotos } from '@/lib/db/services';
 
 // Rate limit: 10 uploads per hour
 // TODO: Apply rate limiting middleware
@@ -37,6 +38,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Invalid or expired token' },
         { status: 401 }
+      );
+    }
+    
+    // Check if user can upload more photos (max 3)
+    const canUpload = await canUploadMorePhotos(userId);
+    if (!canUpload) {
+      return NextResponse.json(
+        { error: 'Maximum photo limit reached. Free users can upload up to 3 photos.' },
+        { status: 403 }
       );
     }
     
@@ -79,55 +89,39 @@ export async function POST(request: NextRequest) {
     const extension = file.name.split('.').pop() || 'jpg';
     const fileName = `photo_${timestamp}.${extension}.enc`;
     
-    // TODO: Upload to storage
-    // const storageLocation = await uploadEncryptedFile(
-    //   encryptedData,
-    //   fileName,
-    //   userId
-    // );
-    const storageLocation = `s3://demo-bucket/users/${userId}/files/${fileName}`;
+    // Upload to storage
+    const storageLocation = await uploadEncryptedFile(
+      encryptedData,
+      fileName,
+      userId
+    );
     
-    // Calculate retention date
-    const retentionDays = parseInt(process.env.RETENTION_DAYS || '30', 10);
-    const retentionUntil = new Date();
-    retentionUntil.setDate(retentionUntil.getDate() + retentionDays);
+    // Generate a public URL for display
+    let publicUrl: string;
+    if (storageLocation.startsWith('file://')) {
+      // For local storage, create a public URL that serves the file
+      publicUrl = `/api/files/${userId}/${fileName}`;
+    } else {
+      // For S3, generate a presigned URL
+      publicUrl = await generatePresignedDownloadUrl(storageLocation, 3600); // 1 hour expiry
+    }
     
-    // TODO: Save to database
-    // const photo = await db.profilePhotos.create({
-    //   userId,
-    //   fileName: file.name,
-    //   storedLocation: storageLocation,
-    //   encryptionIv: iv,
-    //   authTag: authTag,
-    //   uploadedAt: new Date(),
-    //   retentionUntil,
-    // });
-    
-    const photoId = 'demo-photo-id'; // TODO: Use actual photo ID
-    
-    // TODO: Log audit event
-    // await db.auditLogs.create({
-    //   userId,
-    //   action: 'photo_uploaded',
-    //   resource: 'profile_photo',
-    //   resourceId: photoId,
-    //   ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-    //   userAgent: request.headers.get('user-agent') || 'unknown',
-    //   metadata: {
-    //     fileName: file.name,
-    //     fileSize: file.size,
-    //     fileType: file.type,
-    //   },
-    // });
+    // Save to database using new services
+    const photo = await createPortfolioPhoto({
+      userId,
+      photoUrl: publicUrl,
+      storageLocation,
+      iv,
+      authTag,
+    });
     
     return NextResponse.json(
       {
         message: 'Photo uploaded and encrypted successfully',
         photo: {
-          id: photoId,
+          id: photo.id,
           fileName: file.name,
-          uploadedAt: new Date().toISOString(),
-          retentionUntil: retentionUntil.toISOString(),
+          uploadedAt: photo.uploadedAt.toISOString(),
         },
       },
       { status: 201 }
@@ -144,7 +138,7 @@ export async function POST(request: NextRequest) {
 
 /**
  * GET /api/upload/photo
- * Get user's profile photo
+ * Get user's portfolio photos
  */
 export async function GET(request: NextRequest) {
   try {
@@ -165,11 +159,11 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    // TODO: Fetch photo from database
-    // const photo = await db.profilePhotos.findByUserId(userId);
+    // Fetch photos from database
+    const photos = await listUserPortfolioPhotos(userId);
     
     return NextResponse.json(
-      { photo: null }, // TODO: Return actual photo
+      { photos },
       { status: 200 }
     );
   } catch (error) {

@@ -476,6 +476,9 @@ export async function getUserPhotoCount(userId: string): Promise<number> {
 export async function createPortfolioPhoto(data: {
   userId: string;
   photoUrl: string;
+  storageLocation: string;
+  iv: string;
+  authTag: string;
 }): Promise<UserPortfolioPhoto> {
   // Check limit before creating
   const canUpload = await canUploadMorePhotos(data.userId);
@@ -487,10 +490,10 @@ export async function createPortfolioPhoto(data: {
   const now = new Date();
 
   const rows = await query<UserPortfolioPhoto>(
-    `INSERT INTO user_portfolio_photos (id, user_id, photo_url, uploaded_at)
-    VALUES ($1, $2, $3, $4)
+    `INSERT INTO user_portfolio_photos (id, user_id, photo_url, storage_location, iv, auth_tag, uploaded_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
     RETURNING *`,
-    [id, data.userId, data.photoUrl, now]
+    [id, data.userId, data.photoUrl, data.storageLocation, data.iv, data.authTag, now]
   );
 
   return rows[0];
@@ -586,12 +589,6 @@ export async function createResume(data: {
   resumeUrl: string;
   originalFilename: string;
   aiNotes?: string;
-  format?: string;
-  storedLocation?: string;
-  encryptionIv?: string;
-  authTag?: string;
-  retentionUntil?: Date;
-  parsed?: any;
 }): Promise<Resume> {
   const id = crypto.randomUUID();
   const now = new Date();
@@ -599,9 +596,8 @@ export async function createResume(data: {
   const rows = await query<Resume>(
     `INSERT INTO resumes (
       id, user_id, resume_url, original_filename, uploaded_at, 
-      ai_notes, portfolio_generated, file_name, format, stored_location,
-      encryption_iv, auth_tag, retention_until, parsed
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ai_notes, portfolio_generated
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
     RETURNING *`,
     [
       id,
@@ -611,13 +607,6 @@ export async function createResume(data: {
       now,
       data.aiNotes || null,
       false, // portfolio_generated
-      data.originalFilename, // fileName (legacy)
-      data.format || null,
-      data.storedLocation || null,
-      data.encryptionIv || null,
-      data.authTag || null,
-      data.retentionUntil || null,
-      data.parsed ? JSON.stringify(data.parsed) : null,
     ]
   );
 
@@ -671,30 +660,6 @@ export async function updateResume(
   if (data.portfolioGenerated !== undefined) {
     fields.push(`portfolio_generated = $${paramIndex++}`);
     values.push(data.portfolioGenerated);
-  }
-  if (data.format !== undefined) {
-    fields.push(`format = $${paramIndex++}`);
-    values.push(data.format);
-  }
-  if (data.storedLocation !== undefined) {
-    fields.push(`stored_location = $${paramIndex++}`);
-    values.push(data.storedLocation);
-  }
-  if (data.encryptionIv !== undefined) {
-    fields.push(`encryption_iv = $${paramIndex++}`);
-    values.push(data.encryptionIv);
-  }
-  if (data.authTag !== undefined) {
-    fields.push(`auth_tag = $${paramIndex++}`);
-    values.push(data.authTag);
-  }
-  if (data.retentionUntil !== undefined) {
-    fields.push(`retention_until = $${paramIndex++}`);
-    values.push(data.retentionUntil);
-  }
-  if (data.parsed !== undefined) {
-    fields.push(`parsed = $${paramIndex++}`);
-    values.push(data.parsed ? JSON.stringify(data.parsed) : null);
   }
 
   if (fields.length === 0) {

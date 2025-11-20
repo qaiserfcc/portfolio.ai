@@ -35,8 +35,8 @@ export default function LoginPage() {
       console.log('Login response data:', data);
 
       if (response.ok) {
-        console.log('Login successful, redirecting to /family');
-        router.push('/family');
+        console.log('Login successful, redirecting to /dashboard');
+        router.push('/dashboard');
       } else {
         console.log('Login failed with error:', data.error);
         setError(data.error || 'Login failed');

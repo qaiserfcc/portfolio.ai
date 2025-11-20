@@ -25,12 +25,68 @@ export async function initializeDatabase() {
       );
     `);
 
+    // Create user_sessions table (for refresh tokens)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_sessions (
+        id VARCHAR(255) PRIMARY KEY,
+        user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token_hash VARCHAR(255) NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        ip_address VARCHAR(255),
+        user_agent TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        last_used_at TIMESTAMP
+      );
+    `);
+
+    // Create index on user_id for sessions
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_user_sessions_user 
+      ON user_sessions(user_id);
+    `);
+
+    // Create index on expires_at for cleanup
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_user_sessions_expires 
+      ON user_sessions(expires_at);
+    `);
+
+    // Create audit_logs table (for security logging)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id VARCHAR(255) PRIMARY KEY,
+        user_id VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+        action VARCHAR(100) NOT NULL,
+        resource VARCHAR(100) NOT NULL,
+        resource_id VARCHAR(255),
+        ip_address VARCHAR(255),
+        user_agent TEXT,
+        details TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    // Create index on user_id for audit logs
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_user 
+      ON audit_logs(user_id);
+    `);
+
+    // Create index on created_at for audit logs
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_created 
+      ON audit_logs(created_at);
+    `);
+
     // Create user_portfolio_photos table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS user_portfolio_photos (
         id VARCHAR(255) PRIMARY KEY,
         user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         photo_url TEXT NOT NULL,
+        storage_location TEXT NOT NULL,
+        iv VARCHAR(255) NOT NULL,
+        auth_tag VARCHAR(255) NOT NULL,
         uploaded_at TIMESTAMP DEFAULT NOW()
       );
     `);
@@ -126,6 +182,8 @@ export async function dropAllTables() {
     await pool.query('DROP TABLE IF EXISTS generated_portfolios CASCADE;');
     await pool.query('DROP TABLE IF EXISTS resumes CASCADE;');
     await pool.query('DROP TABLE IF EXISTS user_portfolio_photos CASCADE;');
+    await pool.query('DROP TABLE IF EXISTS audit_logs CASCADE;');
+    await pool.query('DROP TABLE IF EXISTS user_sessions CASCADE;');
     await pool.query('DROP TABLE IF EXISTS users CASCADE;');
 
     console.log('All tables dropped successfully');

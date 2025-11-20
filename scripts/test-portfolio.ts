@@ -14,18 +14,56 @@ import {
 } from '../src/lib/db/services';
 import { generatePortfolioContent, generateGradientTheme } from '../src/lib/ai/portfolio-generator';
 
+async function runAIGenerationTests() {
+  console.log('6️⃣ Generating AI portfolio content...');
+  const portfolioContent = await generatePortfolioContent(
+    {
+      resumeUrl: 'https://example.com/resume.pdf',
+      aiNotes: 'Software engineer with 5 years experience',
+    },
+    {
+      profilePhoto: 'https://example.com/profile.jpg',
+      portfolioPhotos: ['https://example.com/photo1.jpg'],
+    }
+  );
+  console.log('✅ AI content generated:');
+  console.log(`   - Home: ${portfolioContent.home.title}`);
+  console.log(`   - About: ${portfolioContent.about.title}`);
+  console.log(`   - Portfolio: ${portfolioContent.portfolio.title}`);
+  console.log(`   - Contact: ${portfolioContent.contact.title}\n`);
+
+  console.log('7️⃣ Generating gradient theme...');
+  const gradientCss = generateGradientTheme();
+  console.log(`✅ Theme generated: ${gradientCss}\n`);
+
+  console.log('🎉 AI generation tests passed!\n');
+}
+
 async function testPortfolioGeneration() {
   console.log('🚀 Starting AI Portfolio Generation Test\n');
 
   try {
     // Test 1: Initialize database
     console.log('1️⃣ Initializing database...');
-    const dbInitialized = await initializeDatabase();
+    let dbInitialized = false;
+    try {
+      dbInitialized = await initializeDatabase();
+      if (dbInitialized) {
+        console.log('✅ Database initialized\n');
+      } else {
+        console.log('⚠️  Database initialization failed\n');
+      }
+    } catch {
+      console.log('⚠️  Database not configured (expected in development without DB_URL)');
+      console.log('   Skipping database-dependent tests...\n');
+      dbInitialized = false;
+    }
+
     if (!dbInitialized) {
-      console.log('⚠️  Database initialization skipped (DB_URL not configured)');
-      console.log('   This is expected in development without a database.\n');
-    } else {
-      console.log('✅ Database initialized\n');
+      // Skip database-dependent tests and go straight to AI generation
+      console.log('⏭️  Skipping database tests, proceeding to AI generation...\n');
+      await runAIGenerationTests();
+      return;
     }
 
     // Test 2: Create test user
@@ -61,6 +99,9 @@ async function testPortfolioGeneration() {
     const photo1 = await createPortfolioPhoto({
       userId: testUser.id,
       photoUrl: 'https://example.com/photo1.jpg',
+      storageLocation: 'file:///tmp/test-photo.jpg',
+      iv: '0123456789abcdef0123456789abcdef',
+      authTag: 'fedcba9876543210fedcba9876543210',
     });
     console.log(`✅ Photo 1 uploaded: ${photo1.id}\n`);
 

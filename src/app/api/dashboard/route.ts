@@ -18,36 +18,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
     }
 
-    // For demo purposes, return mock data
-    if (userId === 'demo-user-id') {
-      return NextResponse.json({
-        user: {
-          id: 'demo-user-id',
-          name: 'Demo User',
-          email: 'demo@example.com',
-          role: 'superuser',
-        },
-        stats: {
-          resumeCount: 0,
-          photoCount: 0,
-          portfolioCount: 0,
-          lastGeneratedAt: null,
-        },
-        limits: {
-          maxResumes: 10,
-          maxPhotos: 9,
-          canUploadMoreResumes: true,
-          canUploadMorePhotos: true,
-        },
-        metadata: {
-          showFamilyLink: true,
-        },
-        resumes: [],
-        photos: [],
-        portfolios: [],
-      }, { status: 200 });
-    }
-
     const summary = await getDashboardSummary(userId);
     return NextResponse.json(summary, { status: 200 });
   } catch (error) {

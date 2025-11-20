@@ -92,13 +92,12 @@ export async function POST(request: NextRequest) {
     const extension = file.name.split('.').pop() || 'bin';
     const fileName = `resume_${timestamp}.${extension}.enc`;
     
-    // TODO: Upload to storage (currently using mock path)
-    // const storageLocation = await uploadEncryptedFile(
-    //   encryptedData,
-    //   fileName,
-    //   userId
-    // );
-    const storageLocation = `s3://demo-bucket/users/${userId}/files/${fileName}`;
+    // Upload to storage
+    const storageLocation = await uploadEncryptedFile(
+      encryptedData,
+      fileName,
+      userId
+    );
     
     // Save to database using new services
     const resume = await createResume({

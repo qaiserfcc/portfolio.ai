@@ -15,16 +15,7 @@ export function getPool(): Pool {
     const dbUrl = process.env.DB_URL;
     
     if (!dbUrl) {
-      console.warn('DB_URL not configured. Using mock database.');
-      // Return a mock pool for development without database
-      return {
-        query: async () => ({ rows: [], rowCount: 0 }),
-        connect: async () => ({
-          query: async () => ({ rows: [], rowCount: 0 }),
-          release: () => {},
-        }),
-        end: async () => {},
-      } as any;
+      throw new Error('DB_URL environment variable is required but not configured. Please set up your database connection string.');
     }
 
     pool = new Pool({
@@ -44,12 +35,24 @@ export function getPool(): Pool {
 }
 
 /**
+ * Convert snake_case database column names to camelCase for TypeScript interfaces
+ */
+function mapRowToCamelCase(row: any): any {
+  const mapped: any = {};
+  for (const [key, value] of Object.entries(row)) {
+    const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+    mapped[camelKey] = value;
+  }
+  return mapped;
+}
+
+/**
  * Execute a query with automatic connection handling
  */
 export async function query<T = any>(text: string, params?: any[]): Promise<T[]> {
   const pool = getPool();
   const result = await pool.query(text, params);
-  return result.rows;
+  return result.rows.map(row => mapRowToCamelCase(row)) as T[];
 }
 
 /**

@@ -41,7 +41,10 @@ export interface AuditLog {
 export interface UserPortfolioPhoto {
   id: string;
   userId: string;
-  photoUrl: string;
+  photoUrl: string; // Public URL for display
+  storageLocation: string; // Internal storage location (file:// or s3://)
+  iv: string; // Initialization vector for decryption (hex)
+  authTag: string; // Authentication tag for decryption (hex)
   uploadedAt: Date;
 }
 
@@ -54,14 +57,6 @@ export interface Resume {
   uploadedAt: Date;
   aiNotes?: string; // rich text box content
   portfolioGenerated: boolean;
-  // Legacy fields for backward compatibility
-  fileName?: string;
-  format?: string;
-  storedLocation?: string;
-  encryptionIv?: string;
-  authTag?: string;
-  retentionUntil?: Date;
-  parsed?: any;
 }
 
 // Generated Portfolio (one per resume)
