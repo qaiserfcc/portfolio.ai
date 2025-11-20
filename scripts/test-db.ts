@@ -1,6 +1,10 @@
+import { config } from 'dotenv';
 import { initializeDatabase } from '../src/lib/db/init';
 import { createUser, findUserByEmail } from '../src/lib/db/services';
 import { hashPassword, verifyPassword } from '../src/lib/security/auth';
+
+// Load environment variables
+config({ path: '.env' });
 
 async function testDatabaseConnection() {
   console.log('Testing database connection...');
@@ -18,6 +22,11 @@ async function testDatabaseConnection() {
     // Test user creation
     const testEmail = `test-${Date.now()}@example.com`;
     const testPassword = 'testpassword123';
+
+    console.log('Test user credentials:');
+    console.log('Email:', testEmail);
+    console.log('Password:', testPassword);
+    console.log('');
 
     console.log('Creating test user...');
     const hashedPassword = await hashPassword(testPassword);

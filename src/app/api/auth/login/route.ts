@@ -64,7 +64,77 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ message: 'Login route working with password verification' }, { status: 200 });
+    // Update user's last login
+    console.log('Updating user last login...');
+    await updateUserLastLogin(user.id);
+
+    // Create tokens
+    console.log('Creating JWT tokens...');
+    const accessToken = createAccessToken(user.id, user.email, user.role || undefined);
+    const refreshToken = createRefreshToken(user.id);
+
+    // Hash the refresh token for storage
+    console.log('Hashing refresh token for session storage...');
+    const refreshTokenHash = await hashToken(refreshToken);
+
+    // Create user session
+    console.log('Creating user session...');
+    const sessionExpiresAt = new Date();
+    sessionExpiresAt.setDate(sessionExpiresAt.getDate() + 7); // 7 days
+
+    await createUserSession({
+      userId: user.id,
+      tokenHash: refreshTokenHash,
+      expiresAt: sessionExpiresAt,
+      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || undefined,
+      userAgent: request.headers.get('user-agent') || undefined,
+    });
+
+    // Create audit log
+    console.log('Creating audit log...');
+    await createAuditLog({
+      userId: user.id,
+      action: 'login',
+      resource: 'auth',
+      ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || undefined,
+      userAgent: request.headers.get('user-agent') || undefined,
+      details: { email: user.email },
+    });
+
+    // Create response with cookies
+    console.log('Setting authentication cookies...');
+    const response = NextResponse.json(
+      {
+        message: 'Login successful',
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+        },
+      },
+      { status: 200 }
+    );
+
+    // Set httpOnly cookies
+    response.cookies.set('accessToken', accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 3600, // 1 hour
+      path: '/',
+    });
+
+    response.cookies.set('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 604800, // 7 days
+      path: '/',
+    });
+
+    console.log('Login completed successfully');
+    return response;
   } catch (error) {
     console.error('Login error:', error);
     return NextResponse.json(
