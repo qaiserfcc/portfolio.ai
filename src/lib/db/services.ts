@@ -1206,6 +1206,127 @@ export async function deleteCompletePortfolio(
 }
 
 /**
+ * Regenerate portfolio - delete existing and create new one
+ */
+export async function regeneratePortfolio(data: {
+  resumeId: string;
+  userId: string;
+  gradientCss: string;
+  pages: Array<{
+    pageType: PageType;
+    title: string;
+    content: string;
+    publicUrl: string;
+  }>;
+}): Promise<{
+  portfolio: GeneratedPortfolio;
+  theme: PortfolioTheme;
+  pages: PortfolioPage[];
+}> {
+  const client = await getClient();
+
+  try {
+    await client.query('BEGIN');
+
+    // Find existing portfolio
+    const existingPortfolio = await client.query<{ id: string }>(
+      'SELECT id FROM generated_portfolios WHERE resume_id = $1',
+      [data.resumeId]
+    );
+
+    // Delete existing portfolio if it exists
+    if (existingPortfolio.rows.length > 0) {
+      const portfolioId = existingPortfolio.rows[0].id;
+
+      // Delete pages
+      await client.query(
+        'DELETE FROM portfolio_pages WHERE portfolio_id = $1',
+        [portfolioId]
+      );
+
+      // Delete theme
+      await client.query(
+        'DELETE FROM portfolio_themes WHERE portfolio_id = $1',
+        [portfolioId]
+      );
+
+      // Delete portfolio
+      await client.query(
+        'DELETE FROM generated_portfolios WHERE id = $1',
+        [portfolioId]
+      );
+    }
+
+    // Create new portfolio
+    const portfolioId = crypto.randomUUID();
+    const now = new Date();
+
+    const portfolioResult = await client.query<GeneratedPortfolio>(
+      `INSERT INTO generated_portfolios (id, resume_id, user_id, generated_at)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *`,
+      [portfolioId, data.resumeId, data.userId, now]
+    );
+    const portfolio = portfolioResult.rows[0];
+
+    // Create theme
+    const themeId = crypto.randomUUID();
+    const themeResult = await client.query<PortfolioTheme>(
+      `INSERT INTO portfolio_themes (id, portfolio_id, gradient_css, created_at)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *`,
+      [themeId, portfolioId, data.gradientCss, now]
+    );
+    const theme = themeResult.rows[0];
+
+    // Update portfolio with theme ID
+    await client.query(
+      'UPDATE generated_portfolios SET theme_id = $1 WHERE id = $2',
+      [themeId, portfolioId]
+    );
+    portfolio.themeId = themeId;
+
+    // Create all pages
+    const pages: PortfolioPage[] = [];
+    for (const pageData of data.pages) {
+      const pageId = crypto.randomUUID();
+      const pageResult = await client.query<PortfolioPage>(
+        `INSERT INTO portfolio_pages (
+          id, portfolio_id, page_type, title, content, public_url, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING *`,
+        [
+          pageId,
+          portfolioId,
+          pageData.pageType,
+          pageData.title,
+          pageData.content,
+          pageData.publicUrl,
+          now,
+        ]
+      );
+      pages.push(pageResult.rows[0]);
+    }
+
+    // Ensure resume is marked as portfolio generated
+    await client.query(
+      'UPDATE resumes SET portfolio_generated = true WHERE id = $1',
+      [data.resumeId]
+    );
+
+    await client.query('COMMIT');
+
+    return { portfolio, theme, pages };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error regenerating portfolio:', error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * Delete all user data (resumes, photos, portfolios)
  * Use for account deletion or GDPR compliance
  */

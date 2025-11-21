@@ -17,6 +17,7 @@ import {
   FaUser,
   FaCloudUploadAlt,
   FaList,
+  FaRedo,
 } from 'react-icons/fa';
 import Section from '@/components/ui/Section';
 import Container from '@/components/ui/Container';
@@ -236,6 +237,37 @@ export default function DashboardPage() {
     } catch (err) {
       setError('An error occurred while generating portfolio');
       console.error('Generation error:', err);
+    } finally {
+      setIsGenerating(null);
+    }
+  };
+
+  const handleRegeneratePortfolio = async (resumeId: string) => {
+    if (!confirm('Are you sure you want to regenerate this portfolio? This will delete the existing portfolio and create a new one.')) return;
+
+    setIsGenerating(resumeId);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await fetch('/api/portfolio/regenerate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ resumeId }),
+      });
+
+      if (response.ok) {
+        setSuccess('Portfolio regenerated successfully!');
+        await refreshDashboard();
+      } else {
+        const data = await response.json();
+        setError(data.error || 'Failed to regenerate portfolio');
+      }
+    } catch (err) {
+      setError('An error occurred while regenerating portfolio');
+      console.error('Regeneration error:', err);
     } finally {
       setIsGenerating(null);
     }
@@ -483,9 +515,19 @@ export default function DashboardPage() {
                                 {isGenerating === resume.id ? 'Generating...' : 'Generate Portfolio'}
                               </button>
                             ) : (
-                              <button onClick={() => router.push(resume.publicUrl || '#')} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 text-white rounded-lg transition-all">
-                                <FaEye className="w-4 h-4" /> View Portfolio
-                              </button>
+                              <div className="flex gap-2">
+                                <button onClick={() => router.push(resume.publicUrl || '#')} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 text-white rounded-lg transition-all">
+                                  <FaEye className="w-4 h-4" /> View Portfolio
+                                </button>
+                                <button
+                                  onClick={() => handleRegeneratePortfolio(resume.id)}
+                                  disabled={isGenerating === resume.id}
+                                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white rounded-lg transition-all disabled:opacity-50"
+                                >
+                                  <FaRedo className="w-4 h-4" />
+                                  {isGenerating === resume.id ? 'Regenerating...' : 'Regenerate'}
+                                </button>
+                              </div>
                             )}
                           </div>
                         </div>
