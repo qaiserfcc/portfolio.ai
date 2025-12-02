@@ -9,6 +9,12 @@
 - Ensure dashboard and upload controls work properly
 - Maintain organized task tracking with .progress folder system
 
+## AI Migration Context (Nov 25, 2025)
+
+- We completed a migration from GitHub Models API to Together AI for portfolio content generation. The system now supports multiple providers (Together AI by default) with a provider abstraction.
+- Current immediate focus: finish provider selection and CI integration, add support for Google Gemini provider (`GEMINI_API_KEY`), fix lint errors, and ensure safe default config when API keys are missing.
+- Next actionable item: configure a valid `TOGETHER_API_KEY` or `GEMINI_API_KEY` for dev & CI and implement automated tests that validate provider selection and fallback behavior.
+
 ## Current Blockers
 
 - Database connection not configured (invalid MongoDB URL in .env)

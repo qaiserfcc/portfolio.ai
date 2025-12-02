@@ -16,7 +16,8 @@
 
 - **Factory Pattern**: Theme generation and content creation use factory-like structures for different output types.
 
-- **Strategy Pattern**: Storage providers (`uploadEncryptedFile`) and AI models can be swapped via configuration.
+ - **Strategy Pattern**: Storage providers (`uploadEncryptedFile`) and AI models can be swapped via configuration. The AI provider strategy enables runtime selection between providers (Together, GitHub Models, OpenRouter) with environment-based keys.
+ - **Provider Fallback**: All AI provider calls include a fallback path that generates base template JSON content when the provider is unreachable or API keys are invalid. This preserves UX for portfolio generation even without external AI access.
 
 - **Middleware Pattern**: Authentication, authorization, and rate limiting implemented as composable middleware.
 
@@ -67,3 +68,8 @@
 - **Caching**: Browser caching for static assets, potential API response caching.
 
 - **Connection Pooling**: Database connections pooled for efficiency.
+
+## AI & Provider Testing Patterns
+
+- **Provider Smoke Tests**: CI should run smoke tests to validate provider keys, return codes, and basic response shapes when the `TOGETHER_API_KEY` or other API keys are present in environments.
+- **Local Fallback Tests**: Use the `test:portfolio` harness to validate both provider-based and fallback generation scenarios.

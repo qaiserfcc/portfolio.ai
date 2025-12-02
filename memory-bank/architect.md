@@ -25,6 +25,8 @@ This file contains the architectural decisions and design patterns for the Portf
 
 10. **AI Content Generation**: Modular AI layer ready for integration with Hugging Face, OpenAI, or local models for portfolio content generation.
 
+11. **AI Provider Strategy** (Nov 25, 2025): Implement a provider-agnostic layer with a strategy pattern to support multiple AI providers. Currently Together AI (`meta-llama/Llama-3.3-70B-Instruct`) is the default integration used during development. The design choice supports swapping providers in production, adding test harnesses, and graceful fallbacks.
+
 ## Design Patterns
 
 - **Repository Pattern**: Database services act as repositories for data access.
@@ -48,4 +50,9 @@ This file contains the architectural decisions and design patterns for the Portf
 - CDN for static assets
 - Background job processing for heavy AI tasks (future)
 - Caching layers for frequently accessed portfolios
+
+## AI-specific operational considerations
+
+- Use environment variables for provider selection and keys (e.g., `TOGETHER_API_KEY` for Together AI). The code includes a fallback to basic content when providers are unavailable or API keys are invalid.
+- For longer running AI tasks, consider moving AI generation to background workers (queue-based) to keep API responses snappy and to allow retry/requeue for failures.
 

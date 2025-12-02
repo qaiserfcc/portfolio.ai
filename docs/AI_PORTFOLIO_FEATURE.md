@@ -235,6 +235,34 @@ const response = await hf.textGeneration({
   model: 'gpt2',
   inputs: prompt,
 });
+
+### Gemini (Google Generative Language API) Integration
+If you prefer to use Google Gemini / Generative Language, configure the `GEMINI_API_KEY` and `GEMINI_API_ENDPOINT` (if necessary) and set the runtime provider to `AI_PROVIDER=gemini`. The `portfolio-generator` implementation includes a `getGeminiClient()` which maps the `messages` payload to a Gemini-compatible prompt and normalizes the response shape to the common `choices[0].message.content` form used across providers.
+
+Example config (.env):
+```env
+AI_PROVIDER=gemini
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_API_ENDPOINT=https://generativelanguage.googleapis.com/v1beta2/models/gemini-1.3:generateText
+```
+
+Notes:
+- Gemini/Vertex API might require different authentication (Bearer token or an API key) depending on the platform and project configuration. The `GEMINI_BEARER` environment variable is supported if you prefer to inject a bearer token.
+- The current implementation normalizes Gemini responses to keep the rest of the app unchanged.
+
+Retry & Fallback behavior
+-------------------------
+
+The Gemini client will attempt a small number of retries for transient errors (e.g. 429, 5xx). If the requested model returns a 404 (Requested entity not found), the service will automatically retry with a fallback model (e.g. `text-bison-001`). The retry count and base backoff are configurable via environment variables:
+
+```env
+GEMINI_MAX_RETRIES=3
+GEMINI_BACKOFF_MS=250
+GEMINI_FALLBACK_MODEL=text-bison-001
+```
+
+This improves resiliency when using API keys that have limited access to new or advanced models. If you need stricter control over model selection, set `GEMINI_DEFAULT_MODEL` to your authorized model name and provide appropriate API key/permission scope.
+
 ```
 
 ## Testing

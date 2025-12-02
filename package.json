@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "web": "npm run dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -14,7 +15,9 @@
     "db:seed": "npx tsx -r dotenv/config src/lib/db/seed.ts",
     "purge-data": "node notenv.config()scripts/purge-expired-data.mjs",
     "generate-keys": "node -e \"console.log('ENCRYPTION_KEY=' + require('crypto').randomBytes(32).toString('hex')); console.log('JWT_SECRET=' + require('crypto').randomBytes(32).toString('hex'));\"",
-    "test:portfolio": "npx tsx scripts/test-portfolio.ts"
+    "test:portfolio": "npx tsx scripts/test-portfolio.ts",
+    "test": "vitest",
+    "test:portfolio:gemini": "AI_PROVIDER=gemini npx tsx scripts/test-portfolio.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.936.0",

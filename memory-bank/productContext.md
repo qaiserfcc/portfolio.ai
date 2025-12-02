@@ -20,13 +20,12 @@ Portfolio.ai is a SaaS platform that transforms resumes into professional portfo
 
 ## Technical Stack
 
-- **Frontend**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS, Framer Motion
-- **Backend**: Next.js API routes, PostgreSQL with connection pooling
-- **Database**: PostgreSQL with tables for users, resumes, photos, portfolios, sessions, audit logs
-- **Storage**: AWS S3 or Google Cloud Storage for file uploads
-- **Security**: JWT authentication, AES-256-GCM encryption, rate limiting
-- **AI**: Custom portfolio generator (currently stubbed, ready for Hugging Face/OpenAI integration)
-- **Deployment**: Vercel with environment-based configuration
+**AI**: Custom portfolio generator using a provider-agnostic layer; newly integrated with Together AI using Llama 3.3 70B Instruct (default) with graceful fallback content when API keys are not configured. The AI layer is designed to support multiple providers (Together AI, GitHub Models, OpenRouter) via a provider strategy.
+**AI**: Custom portfolio generator using a provider-agnostic layer; newly integrated with Together AI using Llama 3.3 70B Instruct (default) with graceful fallback content when API keys are not configured. The AI layer supports multiple providers (Together AI, GitHub Models, OpenRouter, and Google Gemini via `GEMINI_API_KEY`) via a provider strategy (set `AI_PROVIDER` environment variable to select provider).
+ - **Model Selection**: Use `TOGETHER_DEFAULT_MODEL` or `GEMINI_DEFAULT_MODEL` to override the default model for each provider.
+**Deployment**: Vercel with environment-based configuration
+
+- CI should validate provider availability via a basic smoke test and check for required env variables during build or PR validation.
 - **Development**: ESLint, TypeScript, Vitest for testing
 
 ## Architecture

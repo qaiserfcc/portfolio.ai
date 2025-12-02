@@ -76,6 +76,20 @@
 **Alternatives Considered**: No retention limit, user-controlled retention  
 **Impact**: Privacy compliance, storage cost management
 
+### Together AI (Llama 3.3) Migration
+**Date**: Nov 25, 2025
+**Decision**: Migrate AI content generation from GitHub Models API to Together AI (`meta-llama/Llama-3.3-70B-Instruct`) as the default dev provider and implement a provider-agnostic AI layer.
+**Rationale**: GitHub Models and Copilot Chat APIs require paid access or token scopes not available; Together AI provides a reliable free-tier endpoint and compatible API that enables using a high-quality open-source model (Llama 3.3) without paid access for initial development.
+**Alternatives Considered**: Continue with GitHub Models API (restricted access), OpenRouter, Cloudflare workers or self-hosted LLMs.
+**Impact**: Updated `src/lib/ai/portfolio-generator.ts` to use Together AI client; added `TOGETHER_API_KEY` env variable placeholder; added fallback content generation when API key is missing or invalid; tested via `scripts/test-portfolio.ts`.
+
+### Gemini (Google Generative Language) Support
+**Date**: Nov 25, 2025
+**Decision**: Add support for Google Gemini as an alternate provider in the AI provider-agnostic layer and document required environment variables (`GEMINI_API_KEY`, `GEMINI_API_ENDPOINT`) and runtime selection via `AI_PROVIDER=gemini`.
+**Rationale**: Gemini can provide higher quality in production environments; offering multiple providers lets developers choose a provider for cost/performance trade-offs.
+**Alternatives Considered**: Only Together AI or GitHub Models; embed both to support flexibility.
+**Impact**: Added `getGeminiClient()` in `src/lib/ai/portfolio-generator.ts` and normalized responses to the common provider shape. Documentation and env placeholders added; test harness validated fallback behavior when creds are missing.
+
 ## Development Decisions
 
 ### TypeScript Strict Mode

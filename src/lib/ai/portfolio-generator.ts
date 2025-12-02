@@ -1,6 +1,7 @@
 /**
  * AI Content Generation Service
- * Uses Together AI API to generate personalized portfolio content from resume data
+ * Provider-agnostic implementation for generating personalized portfolio content from resume data.
+ * Supports Together AI (default) and Gemini via `AI_PROVIDER` environment variable.
  */
 
 import { PageType } from '../db/schema';
@@ -49,17 +50,33 @@ interface TogetherCompletionParams {
   max_tokens?: number;
 }
 
-interface TogetherResponse {
-  choices: Array<{
-    message?: {
-      content?: string;
-    };
-  }>;
+// --- Gemini types ---
+interface GeminiMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
 }
 
-let togetherClient: { chat: { completions: { create: (params: TogetherCompletionParams) => Promise<TogetherResponse> } } } | null = null;
+interface GeminiCompletionParams {
+  messages: GeminiMessage[];
+  model?: string; // e.g., 'gemini-pro-1.3' or 'text-bison-001'
+  temperature?: number;
+  max_tokens?: number;
+}
 
-function getTogetherClient() {
+// We rely on AIResponse for normalized response shape.
+
+// Unified client interface for provider-agnostic usage
+type AICompletionParams = TogetherCompletionParams | GeminiCompletionParams;
+interface AIResponse {
+  choices: Array<{ message?: { content?: string } }>;
+}
+
+type AIClient = { chat: { completions: { create: (params: AICompletionParams) => Promise<AIResponse> } } };
+
+let togetherClient: AIClient | null = null;
+let geminiClient: AIClient | null = null;
+
+function getTogetherClient(): AIClient {
   if (!togetherClient) {
     if (!process.env.TOGETHER_API_KEY) {
       throw new Error('Together AI API key not configured. Please set TOGETHER_API_KEY environment variable.');
@@ -79,7 +96,7 @@ function getTogetherClient() {
               },
               body: JSON.stringify({
                 messages: params.messages,
-                model: params.model || 'meta-llama/Llama-3.3-70B-Instruct-Turbo', // Llama 3.3 70B Instruct (free tier)
+                model: params.model || process.env.TOGETHER_DEFAULT_MODEL || 'meta-llama/Llama-3.3-70B-Instruct-Turbo', // Llama 3.3 70B Instruct (free tier)
                 temperature: params.temperature || 0.7,
                 max_tokens: params.max_tokens || 1000,
                 stream: false
@@ -97,7 +114,132 @@ function getTogetherClient() {
       }
     };
   }
-  return togetherClient;
+  return togetherClient as AIClient;
+}
+
+function getGeminiClient(): AIClient {
+  if (!geminiClient) {
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error('Gemini API key not configured. Please set GEMINI_API_KEY environment variable.');
+    }
+    const endpoint = process.env.GEMINI_API_ENDPOINT || 'https://generativelanguage.googleapis.com/v1beta2/models/gemini-1.3:generateText';
+    const maxRetries = Number(process.env.GEMINI_MAX_RETRIES || '3');
+    const backoffMs = Number(process.env.GEMINI_BACKOFF_MS || '250');
+
+    async function fetchWithRetries(url: string, opts: RequestInit, retries = maxRetries): Promise<Response> {
+      let attempt = 0;
+      let lastError: unknown;
+      while (attempt <= retries) {
+        try {
+          const res = await fetch(url, opts);
+          // Retry on throttling or server errors
+          if (res.status === 429 || res.status >= 500) {
+            throw new Error(`Transient error from Gemini API: ${res.status} ${res.statusText}`);
+          }
+          return res;
+        } catch (err) {
+          lastError = err;
+          attempt++;
+          console.warn(`Gemini request attempt ${attempt} failed: ${err}`);
+          if (attempt > retries) break;
+          const sleep = backoffMs * Math.pow(2, attempt - 1);
+          await new Promise(r => setTimeout(r, sleep));
+        }
+      }
+      if (lastError instanceof Error) throw lastError;
+      throw new Error(String(lastError));
+    }
+
+    geminiClient = {
+      chat: {
+        completions: {
+            create: async (params: GeminiCompletionParams) => {
+            // Build a request compatible with the Generative Language API (or a proxy/wrapper that accepts a simpler shape).
+            const modelToUse = params.model || process.env.GEMINI_DEFAULT_MODEL || 'gemini-pro-1.3';
+            const requestUrl = endpoint + (process.env.GEMINI_API_KEY ? `?key=${process.env.GEMINI_API_KEY}` : '');
+            const requestOpts: RequestInit = {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(process.env.GEMINI_BEARER ? { 'Authorization': `Bearer ${process.env.GEMINI_BEARER}` } : {}),
+              },
+              body: JSON.stringify({
+                prompt: { text: (params.messages || []).map(m => m.content).join('\n') },
+                model: modelToUse,
+                temperature: params.temperature || 0.7,
+                maxOutputTokens: params.max_tokens || 1024,
+              })
+            };
+            const response = await fetchWithRetries(requestUrl, requestOpts, maxRetries);
+
+            if (!response.ok) {
+              // Try a fallback model for API keys that don't have access to advanced models
+              if (response.status === 404 && modelToUse !== (process.env.GEMINI_FALLBACK_MODEL || 'text-bison-001')) {
+                const fallbackModel = process.env.GEMINI_FALLBACK_MODEL || 'text-bison-001';
+                console.warn(`Gemini model ${modelToUse} not found or not authorized for this API key; retrying with fallback model ${fallbackModel}`);
+                const fallbackBody = JSON.stringify({
+                  prompt: { text: (params.messages || []).map(m => m.content).join('\n') },
+                  model: fallbackModel,
+                  temperature: params.temperature || 0.7,
+                  maxOutputTokens: params.max_tokens || 1024,
+                });
+                const fallbackRequestUrl = endpoint + (process.env.GEMINI_API_KEY ? `?key=${process.env.GEMINI_API_KEY}` : '');
+                const fallbackRequestOpts: RequestInit = {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', ...(process.env.GEMINI_BEARER ? { 'Authorization': `Bearer ${process.env.GEMINI_BEARER}` } : {}) },
+                  body: fallbackBody
+                };
+                const fallbackResponse = await fetchWithRetries(fallbackRequestUrl, fallbackRequestOpts, maxRetries);
+                if (!fallbackResponse.ok) {
+                  const errorText = await fallbackResponse.text();
+                  throw new Error(`Gemini API error: ${fallbackResponse.status} ${fallbackResponse.statusText} - ${errorText}`);
+                }
+                const fallbackJson = await fallbackResponse.json();
+                // Normalize fallback response
+                let fallbackContent = '';
+                if (fallbackJson?.candidates?.length) {
+                  fallbackContent = fallbackJson.candidates[0].content;
+                } else if (fallbackJson?.text) {
+                  fallbackContent = fallbackJson.text;
+                } else if (typeof fallbackJson === 'string') {
+                  fallbackContent = fallbackJson;
+                } else if (fallbackJson?.generations?.length && fallbackJson.generations[0].text) {
+                  fallbackContent = fallbackJson.generations[0].text;
+                }
+                return { choices: [{ message: { content: fallbackContent } }] } as AIResponse;
+              }
+              const errorText = await response.text();
+              throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText}`);
+            }
+
+          const json = await response.json();
+            // Normalize Gemini response to match AIResponse (choices[0].message.content)
+            // Gemini/Vertex might return { candidates: [{ content: '...' }] }
+            let content = '';
+            if (json?.candidates?.length) {
+              content = json.candidates[0].content;
+            } else if (json?.text) {
+              content = json.text;
+            } else if (typeof json === 'string') {
+              content = json;
+            } else if (json?.generations?.length && json.generations[0].text) {
+              content = json.generations[0].text;
+            }
+            return { choices: [{ message: { content } }] } as AIResponse;
+          }
+        }
+      }
+    };
+  }
+  return geminiClient as AIClient;
+}
+
+function getAIClient(): AIClient {
+  const provider = (process.env.AI_PROVIDER || 'together').toLowerCase();
+  if (provider === 'gemini') return getGeminiClient();
+  if (provider === 'together') return getTogetherClient();
+  // default to together
+  return getTogetherClient();
 }
 
 /**
@@ -125,7 +267,7 @@ export function generateGradientTheme(): string {
 /**
  * Extract key information from resume content using AI
  */
-async function analyzeResumeContent(resumeText: string): Promise<ResumeAnalysis> {
+export async function analyzeResumeContent(resumeText: string): Promise<ResumeAnalysis> {
 
   const prompt = `
 Analyze the following resume content and extract key information. Return a JSON object with the following structure:
@@ -144,7 +286,7 @@ ${resumeText}
 Return only valid JSON, no additional text or formatting.`;
 
   try {
-    const response = await getTogetherClient().chat.completions.create({
+    const response = await getAIClient().chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
       max_tokens: 1000,
@@ -198,7 +340,7 @@ Generate a JSON object with this structure:
 Return only valid JSON.`;
 
   try {
-    const response = await getTogetherClient().chat.completions.create({
+    const response = await getAIClient().chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.7,
       max_tokens: 300,
@@ -268,7 +410,7 @@ Generate a JSON object with this structure:
 Make the content engaging, professional, and personalized. Return only valid JSON.`;
 
   try {
-    const response = await getTogetherClient().chat.completions.create({
+    const response = await getAIClient().chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.6,
       max_tokens: 800,
@@ -332,7 +474,7 @@ Generate a JSON object with this structure:
 Make projects realistic and relevant to the person's background. Return only valid JSON.`;
 
   try {
-    const response = await getTogetherClient().chat.completions.create({
+    const response = await getAIClient().chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.7,
       max_tokens: 1000,
@@ -397,7 +539,7 @@ Generate a JSON object with this structure:
 Make it professional and approachable. Return only valid JSON.`;
 
   try {
-    const response = await getTogetherClient().chat.completions.create({
+    const response = await getAIClient().chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.6,
       max_tokens: 400,
